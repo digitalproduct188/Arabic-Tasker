@@ -1,0 +1,665 @@
+name: Auto-Generate & Build Arabic Tasker APK
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  workflow_dispatch:
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 1. توليد جميع ملفات ومجلدات التطبيق تلقائياً
+        run: |
+          mkdir -p app/src/main/java/com/arabic/autotasker
+          mkdir -p app/src/main/res/layout
+
+          # 1. إنشاء ملف settings.gradle
+          cat << 'EOF' > settings.gradle
+          pluginManagement {
+              repositories {
+                  google()
+                  mavenCentral()
+                  gradlePluginPortal()
+              }
+          }
+          dependencyResolutionManagement {
+              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+          }
+          rootProject.name = "ArabicAutoTasker"
+          include ':app'
+          EOF
+
+          # 2. إنشاء ملف gradle.properties
+          cat << 'EOF' > gradle.properties
+          org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
+          android.useAndroidX=true
+          kotlin.code.style=official
+          EOF
+
+          # 3. إنشاء ملف app/build.gradle
+          cat << 'EOF' > app/build.gradle
+          plugins {
+              id 'com.android.application' version '8.2.2'
+              id 'org.jetbrains.kotlin.android' version '1.9.22'
+          }
+
+          android {
+              namespace 'com.arabic.autotasker'
+              compileSdk 34
+
+              defaultConfig {
+                  applicationId "com.arabic.autotasker"
+                  minSdk 24
+                  targetSdk 34
+                  versionCode 1
+                  versionName "1.0"
+              }
+
+              buildTypes {
+                  release {
+                      minifyEnabled false
+                  }
+              }
+              compileOptions {
+                  sourceCompatibility JavaVersion.VERSION_17
+                  targetCompatibility JavaVersion.VERSION_17
+              }
+              kotlinOptions {
+                  jvmTarget = '17'
+              }
+          }
+
+          dependencies {
+              implementation 'androidx.core:core-ktx:1.12.0'
+              implementation 'androidx.appcompat:appcompat:1.6.1'
+              implementation 'com.google.android.material:material:1.11.0'
+          }
+          EOF
+
+          # 4. إنشاء ملف AndroidManifest.xml
+          cat << 'EOF' > app/src/main/AndroidManifest.xml
+          <?xml version="1.0" encoding="utf-8"?>
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+              <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+              <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+              <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+              <uses-permission android:name="android.permission.ACCESS_NOTIFICATION_POLICY" />
+              <uses-permission android:name="android.permission.RECEIVE_SMS" />
+              <uses-permission android:name="android.permission.SEND_SMS" />
+
+              <application
+                  android:allowBackup="true"
+                  android:label="المؤتمت الذكي"
+                  android:icon="@android:drawable/sym_def_app_icon"
+                  android:supportsRtl="true"
+                  android:theme="@style/Theme.AppCompat.Light.DarkActionBar">
+
+                  <activity
+                      android:name=".MainActivity"
+                      android:exported="true">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.LAUNCHER" />
+                      </intent-filter>
+                  </activity>
+
+                  <service
+                      android:name=".AutomationService"
+                      android:enabled="true"
+                      android:exported="false"
+                      android:foregroundServiceType="specialUse" />
+
+                  <receiver
+                      android:name=".SmsAutoReplyReceiver"
+                      android:exported="true"
+                      android:permission="android.permission.BROADCAST_SMS">
+                      <intent-filter>
+                          <action android:name="android.provider.Telephony.SMS_RECEIVED" />
+                      </intent-filter>
+                  </receiver>
+
+                  <service
+                      android:name=".WhatsAppAutoReplyService"
+                      android:label="المؤتمت الذكي - بوت واتساب"
+                      android:exported="true"
+                      android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+                      <intent-filter>
+                          <action android:name="android.service.notification.NotificationListenerService" />
+                      </intent-filter>
+                  </service>
+
+              </application>
+          </manifest>
+          EOF
+
+          # 5. إنشاء ملف تصميم الواجهة activity_main.xml
+          cat << 'EOF' > app/src/main/res/layout/activity_main.xml
+          <?xml version="1.0" encoding="utf-8"?>
+          <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+              android:layout_width="match_parent"
+              android:layout_height="match_parent"
+              android:background="#F5F7FA"
+              android:layoutDirection="rtl">
+
+              <LinearLayout
+                  android:layout_width="match_parent"
+                  android:layout_height="wrap_content"
+                  android:orientation="vertical"
+                  android:padding="20dp">
+
+                  <TextView
+                      android:layout_width="match_parent"
+                      android:layout_height="wrap_content"
+                      android:text="المؤتمت الذكي (Tasker العربي)"
+                      android:textSize="22sp"
+                      android:textStyle="bold"
+                      android:textColor="#1A237E"
+                      android:layout_marginBottom="16dp"/>
+
+                  <TextView
+                      android:layout_width="match_parent"
+                      android:layout_height="wrap_content"
+                      android:text="1. اختر الشرط (متى يعمل؟):"
+                      android:textStyle="bold"/>
+
+                  <Spinner
+                      android:id="@+id/spinnerTrigger"
+                      android:layout_width="match_parent"
+                      android:layout_height="48dp"
+                      android:layout_marginBottom="12dp"/>
+
+                  <TextView
+                      android:layout_width="match_parent"
+                      android:layout_height="wrap_content"
+                      android:text="2. اختر المهمة (ماذا يفعل؟):"
+                      android:textStyle="bold"/>
+
+                  <Spinner
+                      android:id="@+id/spinnerAction"
+                      android:layout_width="match_parent"
+                      android:layout_height="48dp"
+                      android:layout_marginBottom="12dp"/>
+
+                  <Button
+                      android:id="@+id/btnSaveRule"
+                      android:layout_width="match_parent"
+                      android:layout_height="50dp"
+                      android:text="تفعيل وحفظ القاعدة"
+                      android:backgroundTint="#2E7D32"
+                      android:textColor="#FFFFFF"/>
+
+                  <TextView
+                      android:id="@+id/tvActiveRule"
+                      android:layout_width="match_parent"
+                      android:layout_height="wrap_content"
+                      android:text="القاعدة النشطة حالياً: لا يوجد"
+                      android:padding="10dp"
+                      android:layout_marginTop="8dp"
+                      android:background="#EFEFEF"
+                      android:textColor="#D32F2F"/>
+
+                  <Button
+                      android:id="@+id/btnStopService"
+                      android:layout_width="match_parent"
+                      android:layout_height="wrap_content"
+                      android:text="إيقاف محرك الأتمتة"
+                      android:backgroundTint="#C62828"
+                      android:textColor="#FFFFFF"
+                      android:layout_marginTop="8dp"/>
+
+                  <View
+                      android:layout_width="match_parent"
+                      android:layout_height="2dp"
+                      android:background="#CCCCCC"
+                      android:layout_marginVertical="16dp"/>
+
+                  <TextView
+                      android:layout_width="match_parent"
+                      android:layout_height="wrap_content"
+                      android:text="قسم الرد الآلي الذكي (SMS و واتساب)"
+                      android:textSize="18sp"
+                      android:textStyle="bold"
+                      android:textColor="#1A237E"/>
+
+                  <Switch
+                      android:id="@+id/switchSmsReply"
+                      android:layout_width="match_parent"
+                      android:layout_height="48dp"
+                      android:text="تفعيل الرد التلقائي على رسائل SMS"/>
+
+                  <Switch
+                      android:id="@+id/switchWaReply"
+                      android:layout_width="match_parent"
+                      android:layout_height="48dp"
+                      android:text="تفعيل البوت الذكي للواتساب"/>
+
+                  <TextView
+                      android:layout_width="match_parent"
+                      android:layout_height="wrap_content"
+                      android:text="قواعد الرد (اكتب في كل سطر: الكلمة = الرد):"
+                      android:textStyle="bold"
+                      android:layout_marginTop="8dp"/>
+
+                  <EditText
+                      android:id="@+id/etCustomRules"
+                      android:layout_width="match_parent"
+                      android:layout_height="120dp"
+                      android:gravity="top|right"
+                      android:padding="10dp"
+                      android:background="@android:drawable/editbox_background"
+                      android:inputType="textMultiLine"/>
+
+                  <Button
+                      android:id="@+id/btnSaveCustomRules"
+                      android:layout_width="match_parent"
+                      android:layout_height="wrap_content"
+                      android:text="حفظ كلمات الرد الذكي"
+                      android:backgroundTint="#1565C0"
+                      android:textColor="#FFFFFF"
+                      android:layout_marginTop="8dp"/>
+
+              </LinearLayout>
+          </ScrollView>
+          EOF
+
+          # 6. إنشاء ملف MainActivity.kt
+          cat << 'EOF' > app/src/main/java/com/arabic/autotasker/MainActivity.kt
+          package com.arabic.autotasker
+
+          import android.content.Context
+          import android.content.Intent
+          import android.os.Build
+          import android.os.Bundle
+          import android.widget.*
+          import androidx.appcompat.app.AppCompatActivity
+
+          class MainActivity : AppCompatActivity() {
+
+              private val triggers = arrayOf(
+                  "عند توصيل الشاحن",
+                  "عند فصل الشاحن",
+                  "عند انخفاض البطارية",
+                  "عند فتح قفل الشاشة"
+              )
+
+              private val actions = arrayOf(
+                  "نطق رسالة صوتية: تم تنفيذ المهمة بنجاح",
+                  "تفعيل وضع عدم الإزعاج (الصامت)",
+                  "إظهار إشعار منبثق على الشاشة"
+              )
+
+              override fun onCreate(savedInstanceState: Bundle?) {
+                  super.onCreate(savedInstanceState)
+                  setContentView(R.layout.activity_main)
+
+                  val prefs = getSharedPreferences("TaskerPrefs", Context.MODE_PRIVATE)
+
+                  val spinnerTrigger = findViewById<Spinner>(R.id.spinnerTrigger)
+                  val spinnerAction = findViewById<Spinner>(R.id.spinnerAction)
+                  val btnSaveRule = findViewById<Button>(R.id.btnSaveRule)
+                  val btnStopService = findViewById<Button>(R.id.btnStopService)
+                  val tvActiveRule = findViewById<TextView>(R.id.tvActiveRule)
+                  val switchSmsReply = findViewById<Switch>(R.id.switchSmsReply)
+                  val switchWaReply = findViewById<Switch>(R.id.switchWaReply)
+                  val etCustomRules = findViewById<EditText>(R.id.etCustomRules)
+                  val btnSaveCustomRules = findViewById<Button>(R.id.btnSaveCustomRules)
+
+                  spinnerTrigger.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, triggers)
+                  spinnerAction.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, actions)
+
+                  updateUI(prefs.getInt("trigger", -1), prefs.getInt("action", -1), tvActiveRule)
+
+                  val defaultRules = "السلام عليكم=وعليكم السلام يا %المرسل، أهلاً بك!\nالسعر=الأسعار تبدأ من 1000 دج.\nالموقع=نحن متواجدون في وسط المدينة."
+                  etCustomRules.setText(prefs.getString("custom_rules", defaultRules))
+                  switchSmsReply.isChecked = prefs.getBoolean("sms_auto_reply", false)
+                  switchWaReply.isChecked = prefs.getBoolean("wa_auto_reply", false)
+
+                  btnSaveRule.setOnClickListener {
+                      val selectedTrigger = spinnerTrigger.selectedItemPosition
+                      val selectedAction = spinnerAction.selectedItemPosition
+
+                      prefs.edit().putInt("trigger", selectedTrigger).putInt("action", selectedAction).apply()
+                      updateUI(selectedTrigger, selectedAction, tvActiveRule)
+
+                      val serviceIntent = Intent(this, AutomationService::class.java)
+                      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                          startForegroundService(serviceIntent)
+                      } else {
+                          startService(serviceIntent)
+                      }
+                      Toast.makeText(this, "تم تفعيل محرك الأتمتة!", Toast.LENGTH_SHORT).show()
+                  }
+
+                  btnStopService.setOnClickListener {
+                      stopService(Intent(this, AutomationService::class.java))
+                      prefs.edit().putInt("trigger", -1).putInt("action", -1).apply()
+                      updateUI(-1, -1, tvActiveRule)
+                      Toast.makeText(this, "تم إيقاف المحرك", Toast.LENGTH_SHORT).show()
+                  }
+
+                  switchSmsReply.setOnCheckedChangeListener { _, isChecked ->
+                      prefs.edit().putBoolean("sms_auto_reply", isChecked).apply()
+                      if (isChecked && Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                          requestPermissions(
+                              arrayOf(android.Manifest.permission.RECEIVE_SMS, android.Manifest.permission.SEND_SMS),
+                              101
+                          )
+                      }
+                  }
+
+                  switchWaReply.setOnCheckedChangeListener { _, isChecked ->
+                      prefs.edit().putBoolean("wa_auto_reply", isChecked).apply()
+                      if (isChecked) {
+                          val enabledListeners = android.provider.Settings.Secure.getString(
+                              contentResolver, "enabled_notification_listeners"
+                          )
+                          if (enabledListeners == null || !enabledListeners.contains(packageName)) {
+                              Toast.makeText(this, "يرجى منح صلاحية الإشعارات للتطبيق", Toast.LENGTH_LONG).show()
+                              startActivity(Intent("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS"))
+                          }
+                      }
+                  }
+
+                  btnSaveCustomRules.setOnClickListener {
+                      prefs.edit().putString("custom_rules", etCustomRules.text.toString()).apply()
+                      Toast.makeText(this, "تم حفظ قواعد الرد الذكي!", Toast.LENGTH_SHORT).show()
+                  }
+              }
+
+              private fun updateUI(triggerIdx: Int, actionIdx: Int, tv: TextView) {
+                  if (triggerIdx != -1 && actionIdx != -1) {
+                      tv.text = "القاعدة النشطة:\nإذا حدث: [${triggers[triggerIdx]}]\nافعل: [${actions[actionIdx]}]"
+                  } else {
+                      tv.text = "القاعدة النشطة حالياً: لا يوجد"
+                  }
+              }
+          }
+          EOF
+
+          # 7. إنشاء ملف AutomationService.kt
+          cat << 'EOF' > app/src/main/java/com/arabic/autotasker/AutomationService.kt
+          package com.arabic.autotasker
+
+          import android.app.*
+          import android.content.*
+          import android.media.AudioManager
+          import android.os.Build
+          import android.os.IBinder
+          import android.speech.tts.TextToSpeech
+          import android.widget.Toast
+          import androidx.core.app.NotificationCompat
+          import java.util.*
+
+          class AutomationService : Service(), TextToSpeech.OnInitListener {
+
+              private lateinit var tts: TextToSpeech
+              private var isTtsReady = false
+
+              private val systemReceiver = object : BroadcastReceiver() {
+                  override fun onReceive(context: Context?, intent: Intent?) {
+                      val prefs = getSharedPreferences("TaskerPrefs", Context.MODE_PRIVATE)
+                      val savedTrigger = prefs.getInt("trigger", -1)
+                      val savedAction = prefs.getInt("action", -1)
+
+                      if (savedTrigger == -1 || savedAction == -1) return
+
+                      val currentEvent = intent?.action
+                      var shouldExecute = false
+
+                      when (savedTrigger) {
+                          0 -> if (currentEvent == Intent.ACTION_POWER_CONNECTED) shouldExecute = true
+                          1 -> if (currentEvent == Intent.ACTION_POWER_DISCONNECTED) shouldExecute = true
+                          2 -> if (currentEvent == Intent.ACTION_BATTERY_LOW) shouldExecute = true
+                          3 -> if (currentEvent == Intent.ACTION_USER_PRESENT) shouldExecute = true
+                      }
+
+                      if (shouldExecute) {
+                          executeAction(savedAction)
+                      }
+                  }
+              }
+
+              override fun onCreate() {
+                  super.onCreate()
+                  tts = TextToSpeech(this, this)
+                  startForegroundServiceNotification()
+                  registerSystemTriggers()
+              }
+
+              private fun registerSystemTriggers() {
+                  val filter = IntentFilter().apply {
+                      addAction(Intent.ACTION_POWER_CONNECTED)
+                      addAction(Intent.ACTION_POWER_DISCONNECTED)
+                      addAction(Intent.ACTION_BATTERY_LOW)
+                      addAction(Intent.ACTION_USER_PRESENT)
+                  }
+                  registerReceiver(systemReceiver, filter)
+              }
+
+              private fun executeAction(actionIndex: Int) {
+                  when (actionIndex) {
+                      0 -> {
+                          if (isTtsReady) {
+                              tts.speak("تم تنفيذ المهمة بنجاح", TextToSpeech.QUEUE_FLUSH, null, "TaskID")
+                          }
+                          Toast.makeText(this, "جاري النطق الصوتي...", Toast.LENGTH_LONG).show()
+                      }
+                      1 -> {
+                          val audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+                          try {
+                              audioManager.ringerMode = AudioManager.RINGER_MODE_SILENT
+                              Toast.makeText(this, "تم تفعيل الوضع الصامت تلقائياً", Toast.LENGTH_LONG).show()
+                          } catch (e: SecurityException) {
+                              Toast.makeText(this, "يرجى منح صلاحية عدم الإزعاج", Toast.LENGTH_LONG).show()
+                          }
+                      }
+                      2 -> {
+                          Toast.makeText(this, "تنبيه الأتمتة: تحقق الشرط المحدد!", Toast.LENGTH_LONG).show()
+                      }
+                  }
+              }
+
+              private fun startForegroundServiceNotification() {
+                  val channelId = "AutoTaskerChannel"
+                  if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                      val channel = NotificationChannel(
+                          channelId,
+                          "خدمة المؤتمت الذكي",
+                          NotificationManager.IMPORTANCE_LOW
+                      )
+                      getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
+                  }
+
+                  val notification = NotificationCompat.Builder(this, channelId)
+                      .setContentTitle("المؤتمت الذكي يعمل")
+                      .setContentText("يراقب الشروط في الخلفية لتنفيذ مهامك...")
+                      .setSmallIcon(android.R.drawable.ic_menu_manage)
+                      .build()
+
+                  startForeground(1, notification)
+              }
+
+              override fun onInit(status: Int) {
+                  if (status == TextToSpeech.SUCCESS) {
+                      tts.language = Locale("ar")
+                      isTtsReady = true
+                  }
+              }
+
+              override fun onDestroy() {
+                  unregisterReceiver(systemReceiver)
+                  tts.shutdown()
+                  super.onDestroy()
+              }
+
+              override fun onBind(intent: Intent?): IBinder? = null
+          }
+          EOF
+
+          # 8. إنشاء ملف SmsAutoReplyReceiver.kt
+          cat << 'EOF' > app/src/main/java/com/arabic/autotasker/SmsAutoReplyReceiver.kt
+          package com.arabic.autotasker
+
+          import android.content.BroadcastReceiver
+          import android.content.Context
+          import android.content.Intent
+          import android.os.Build
+          import android.provider.Telephony
+          import android.telephony.SmsManager
+          import android.widget.Toast
+
+          class SmsAutoReplyReceiver : BroadcastReceiver() {
+
+              override fun onReceive(context: Context, intent: Intent) {
+                  if (intent.action == Telephony.Sms.Intents.SMS_RECEIVED_ACTION) {
+                      val prefs = context.getSharedPreferences("TaskerPrefs", Context.MODE_PRIVATE)
+                      if (!prefs.getBoolean("sms_auto_reply", false)) return
+
+                      val messages = Telephony.Sms.Intents.getMessagesFromIntent(intent)
+                      for (sms in messages) {
+                          val senderNumber = sms.originatingAddress
+                          if (!senderNumber.isNullOrEmpty()) {
+                              sendSmsReply(context, senderNumber, "مرحباً، أنا مشغول حالياً وسأتواصل معك قريباً (رد آلي).")
+                          }
+                      }
+                  }
+              }
+
+              private fun sendSmsReply(context: Context, phoneNumber: String, message: String) {
+                  try {
+                      val smsManager = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                          context.getSystemService(SmsManager::class.java)
+                      } else {
+                          @Suppress("DEPRECATION")
+                          SmsManager.getDefault()
+                      }
+                      smsManager.sendTextMessage(phoneNumber, null, message, null, null)
+                      Toast.makeText(context, "تم إرسال رد SMS تلقائي إلى $phoneNumber", Toast.LENGTH_SHORT).show()
+                  } catch (e: Exception) {
+                      e.printStackTrace()
+                  }
+              }
+          }
+          EOF
+
+          # 9. إنشاء ملف WhatsAppAutoReplyService.kt
+          cat << 'EOF' > app/src/main/java/com/arabic/autotasker/WhatsAppAutoReplyService.kt
+          package com.arabic.autotasker
+
+          import android.app.Notification
+          import android.app.RemoteInput
+          import android.content.Context
+          import android.content.Intent
+          import android.os.Bundle
+          import android.service.notification.NotificationListenerService
+          import android.service.notification.StatusBarNotification
+          import android.widget.Toast
+
+          class WhatsAppAutoReplyService : NotificationListenerService() {
+
+              private val lastReplyTimeMap = HashMap<String, Long>()
+              private val COOLDOWN_TIME_MS = 5 * 60 * 1000L
+
+              override fun onNotificationPosted(sbn: StatusBarNotification) {
+                  val packageName = sbn.packageName
+                  if (packageName != "com.whatsapp" && packageName != "com.whatsapp.w4b") return
+
+                  val prefs = getSharedPreferences("TaskerPrefs", Context.MODE_PRIVATE)
+                  if (!prefs.getBoolean("wa_auto_reply", false)) return
+
+                  val notification = sbn.notification
+                  if (notification.flags and Notification.FLAG_GROUP_SUMMARY != 0) return
+
+                  val extras = notification.extras
+                  val incomingMessage = extras.getCharSequence(Notification.EXTRA_TEXT)?.toString()?.trim() ?: return
+                  val senderName = extras.getCharSequence(Notification.EXTRA_TITLE)?.toString() ?: return
+
+                  val currentTime = System.currentTimeMillis()
+                  val lastReplyTime = lastReplyTimeMap[senderName] ?: 0L
+                  if (currentTime - lastReplyTime < COOLDOWN_TIME_MS) return
+
+                  val rulesString = prefs.getString(
+                      "custom_rules",
+                      "السلام عليكم=وعليكم السلام يا %المرسل، أهلاً بك!\nالسعر=الأسعار تبدأ من 1000 دج.\nالموقع=نحن متواجدون في وسط المدينة."
+                  ) ?: ""
+
+                  val matchedReply = findMatchingReply(incomingMessage, rulesString, senderName) ?: return
+
+                  val actions = notification.actions ?: return
+                  for (action in actions) {
+                      val remoteInputs = action.remoteInputs
+                      if (!remoteInputs.isNullOrEmpty()) {
+                          sendWhatsAppReply(action, remoteInputs, matchedReply)
+                          lastReplyTimeMap[senderName] = currentTime
+                          cancelNotification(sbn.key)
+                          break
+                      }
+                  }
+              }
+
+              private fun findMatchingReply(incomingMsg: String, rulesString: String, sender: String): String? {
+                  val lines = rulesString.split("\n")
+                  for (line in lines) {
+                      if (line.contains("=")) {
+                          val parts = line.split("=", limit = 2)
+                          val keyword = parts[0].trim()
+                          val reply = parts[1].trim()
+
+                          if (keyword.isNotEmpty() && incomingMsg.contains(keyword, ignoreCase = true)) {
+                              return reply.replace("%المرسل", sender)
+                          }
+                      }
+                  }
+                  return null
+              }
+
+              private fun sendWhatsAppReply(
+                  action: Notification.Action,
+                  remoteInputs: Array<RemoteInput>,
+                  message: String
+              ) {
+                  try {
+                      val intent = Intent()
+                      val bundle = Bundle()
+                      for (remoteInput in remoteInputs) {
+                          bundle.putCharSequence(remoteInput.resultKey, message)
+                      }
+                      RemoteInput.addResultsToIntent(remoteInputs, intent, bundle)
+                      action.actionIntent.send(this, 0, intent)
+                      Toast.makeText(this, "تم الرد تلقائياً على واتساب!", Toast.LENGTH_SHORT).show()
+                  } catch (e: Exception) {
+                      e.printStackTrace()
+                  }
+              }
+          }
+          EOF
+
+      - name: 2. تثبيت بيئة جافا JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: 3. إعداد حزمة تطوير أندرويد (Android SDK)
+        uses: android-actions/setup-android@v3
+
+      - name: 4. إعداد محرك البناء Gradle
+        uses: gradle/actions/setup-gradle@v3
+        with:
+          gradle-version: '8.5'
+
+      - name: 5. تجميع وبناء ملف الـ APK
+        run: gradle assembleDebug --no-daemon
+
+      - name: 6. رفع ملف الـ APK الجاهز للتحميل
+        uses: actions/upload-artifact@v4
+        with:
+          name: Arabic-AutoTasker-APK
+          path: app/build/outputs/apk/debug/app-debug.apk
